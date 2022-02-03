@@ -1,0 +1,5 @@
+*.pdb
+*.obj
+*.exe
+**/.vs/**
+**/Debug/**
