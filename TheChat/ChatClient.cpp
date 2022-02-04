@@ -98,6 +98,8 @@ void ChatClient::Run()
 	isRunning = true;
 	connection = ChatConnection(socket);
 
+	cout << "[TheChat] connected! " << endl;
+
 	StartHeartBeatThread();
 	StartStdInputThread();
 
@@ -210,7 +212,6 @@ void ChatClient::StartHeartBeatThread()
 				connection.SendHeartBeat();
 			}
 			
-			cout << "SendHeart Beat" << endl;
 			std::this_thread::sleep_for(chrono::milliseconds(ChatConstant::HEART_BEAT_PERIOD));
 		}
 	};

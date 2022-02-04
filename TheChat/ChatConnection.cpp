@@ -3,12 +3,14 @@
 #include <cassert>
 #include <iostream>
 #include <memory>
+#include <ws2tcpip.h>
 
 
 using namespace std;
 
 ChatConnection::ChatConnection()
 	: isAlive(false)
+	, identifier("Unknown")
 	, socket(INVALID_SOCKET)
 	, timeStamp(std::chrono::steady_clock::now())
 	, receiveBuffer{0, }
@@ -17,10 +19,29 @@ ChatConnection::ChatConnection()
 
 ChatConnection::ChatConnection(Network::TSocket socket)
 	: isAlive(true)
+	, identifier("Unknown")
 	, socket(socket)
 	, timeStamp(std::chrono::steady_clock::now())
 	, receiveBuffer{0, }
 {
+	if (socket == INVALID_SOCKET)
+		return;
+
+	struct sockaddr_in sockAddr;
+	int nameLen = sizeof(struct sockaddr_in);
+
+	if (getpeername(socket, (sockaddr*)(&sockAddr), &nameLen) != 0)
+	{
+		address = "SomeWhere";
+		return;
+	}
+
+	char ipAddress[16];
+	address = inet_ntop(AF_INET, &sockAddr.sin_addr, ipAddress, sizeof(ipAddress));
+	address += ':';
+
+	int port = ntohs(sockAddr.sin_port);
+	address += to_string(port);
 }
 
 ChatConnection::~ChatConnection()
@@ -48,7 +69,13 @@ bool ChatConnection::IsAlive() const
 	const auto deltaTime = chrono::duration_cast<chrono::seconds>(currentTime - timeStamp);
 	const auto deltaSeconds = deltaTime.count();
 
-	return deltaSeconds < ChatConstant::CONNECTION_TIMEOUT;
+	if (deltaSeconds > ChatConstant::CONNECTION_TIMEOUT)
+	{
+		cout << "[ChatConnection][Error] " << identifier << '@' << address << " : connection timed-out!" << endl;
+		return false;
+	}
+
+	return true;
 }
 
 void ChatConnection::RequestSend(const ChatPacket& packet)
@@ -63,18 +90,15 @@ void ChatConnection::Receive()
 	int recvBytes = recv(socket, (char*)receiveBuffer, MAX_SIZE, 0);
 	if (recvBytes < 1)
 	{
-		cout << "[ChatConnection] Broken pipe. Client: " << identifier << "@" << address << endl;
+		cout << "[ChatConnection] Broken connection. " << identifier << "@" << address << endl;
 		Close();
 		return;
 	}
 
 	timeStamp = chrono::steady_clock::now();
 
-	if (recvBytes < 2)
-	{
-		cout << "[ChatConnection] Heart beat received from " << identifier << "@" << address << endl;
+	if (recvBytes < ChatConstant::PACKET_SIZE)
 		return;
-	}
 
 	assert(recvBytes <= MAX_SIZE);
 	recvBytes = min(recvBytes, MAX_SIZE);

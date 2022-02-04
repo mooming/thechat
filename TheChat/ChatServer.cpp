@@ -203,25 +203,31 @@ void ChatServer::StartChatThread()
 					continue;
 
 				connection.Receive();
+				auto received = connection.ExtractReceived();
 
-				for (auto& connection : connections)
+				if (received.size() <= 0)
 				{
-					auto received = connection.ExtractReceived();
-
-					for (auto& packet : received)
+					cout << "[TheChatServer] Heart beat from " << connection.GetID() << '@' << connection.GetAddress() << endl;
+				}
+				else
+				{
+					for (auto& connection : connections)
 					{
-						if (packet.header.tableId == ChatPacket::MSG_TABLE_ID)
+						for (auto& packet : received)
 						{
-							for (auto& peer : connections)
+							if (packet.header.tableId == ChatPacket::MSG_TABLE_ID)
 							{
-								if (connection == peer)
-									continue;
+								for (auto& peer : connections)
+								{
+									if (connection == peer)
+										continue;
 
-								peer.RequestSend(packet);
+									peer.RequestSend(packet);
+								}
 							}
 						}
 					}
-				}
+				}		
 			}
 
 			for (auto& connection : connections)
