@@ -1,25 +1,25 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 
 #include "ChatConstant.h"
+#include "ChatTableID.h"
 
 
 struct ChatPacket final
 {
 public:
-	static constexpr int MSG_TABLE_ID = 0;
-
 	enum class EPacketType : uint8_t
 	{
 		Normal = 0,
-		Large = 1
+		Request = 1
 	};
 
 public:
 	struct Header
 	{
-		uint16_t tableId = 0;
+		EChatTableID tableId = EChatTableID::HEARTBEAT;
 		uint8_t tableVersion = 0;
 		EPacketType packetType = EPacketType::Normal;
 		uint8_t index = 0;
@@ -40,4 +40,30 @@ public:
 
 	ChatPacket();
 	~ChatPacket() = default;
+
+	template<typename T>
+	T& As()
+	{
+		assert(T::GetTableID() == header.tableId);
+		return reinterpret_cast<T&>(*this);
+	}
+
+	template<typename T>
+	const T& As() const
+	{
+		assert(T::GetTableID() == header.tableId);
+		return reinterpret_cast<const T&>(*this);
+	}
+
+	template<typename T>
+	static ChatPacket& From(T& packet)
+	{
+		return reinterpret_cast<ChatPacket&>(packet);
+	}
+
+	template<typename T>
+	static const ChatPacket& From(const T& packet)
+	{
+		return reinterpret_cast<const ChatPacket&>(packet);
+	}
 };

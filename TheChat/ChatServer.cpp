@@ -9,6 +9,8 @@
 #include <ws2tcpip.h>
 
 #include "ChatConstant.h"
+#include "GreetingsPacket.h"
+#include "MessagePacket.h"
 
 
 using namespace std;
@@ -17,6 +19,7 @@ ChatServer::ChatServer(const char* port)
 	: port(port)
 	, listenSocket(INVALID_SOCKET)
 {
+	BuildTableProcessor();
 }
 
 ChatServer::~ChatServer()
@@ -71,7 +74,7 @@ void ChatServer::Listen()
 		return;
 	}
 
-	result = bind(listenSocket, addrInfo->ai_addr, (int)addrInfo->ai_addrlen);
+	result = ::bind(listenSocket, addrInfo->ai_addr, (int)addrInfo->ai_addrlen);
 	if (result == SOCKET_ERROR)
 	{
 		cerr << "[TheChatServer] bind failed. error = " << WSAGetLastError() << endl;
@@ -206,28 +209,12 @@ void ChatServer::StartChatThread()
 				auto received = connection.ExtractReceived();
 
 				if (received.size() <= 0)
-				{
-					cout << "[TheChatServer] Heart beat from " << connection.GetID() << '@' << connection.GetAddress() << endl;
-				}
-				else
-				{
-					for (auto& connection : connections)
-					{
-						for (auto& packet : received)
-						{
-							if (packet.header.tableId == ChatPacket::MSG_TABLE_ID)
-							{
-								for (auto& peer : connections)
-								{
-									if (connection == peer)
-										continue;
+					continue;
 
-									peer.RequestSend(packet);
-								}
-							}
-						}
-					}
-				}		
+				for (auto& packet : received)
+				{
+					ProcessTable(connection, packet);
+				}
 			}
 
 			for (auto& connection : connections)
@@ -236,7 +223,6 @@ void ChatServer::StartChatThread()
 					continue;
 
 				connection.FlushSendRequests();
-
 			}
 		}
 
@@ -266,4 +252,56 @@ void ChatServer::Release()
 
 	closesocket(listenSocket);
 	listenSocket = INVALID_SOCKET;
+}
+
+void ChatServer::BuildTableProcessor()
+{
+	procMap.emplace(EChatTableID::MESSAGE_TABLE, [this](ChatConnection& connection, ChatPacket& packet)
+		{
+			auto& message = packet.As<MessagePacket>();
+			message.Validate();
+
+			cout << "[TheChatServer] From: " << message.GetSenderID() << ", Message: " << message.GetMessage() << endl;
+
+			for (auto& peer : connections)
+			{
+				if (connection == peer)
+					continue;
+
+				peer.RequestSend(packet);
+			}
+		});
+
+	procMap.emplace(EChatTableID::GREETINGS_TABLE, [this](ChatConnection& connection, ChatPacket& packet)
+		{
+			auto& greetings = packet.As<GreetingsPacket>();
+			connection.SetID(greetings.GetSenderID());
+
+			cout << "[TheChatServer] From: " << greetings.GetSenderID() << ", Greetings! " << endl;
+		});
+}
+
+void ChatServer::ProcessTable(ChatConnection& connection, ChatPacket& packet)
+{
+	const auto tableId = packet.header.tableId;
+	auto iter = procMap.find(tableId);
+	if (iter == procMap.end())
+	{
+		cerr << "[TheChatServer][Error] unhandled table id " << static_cast<uint16_t>(tableId)
+			<< " from " << connection.GetID() << '@' << connection.GetAddress() << endl;
+		return;
+	}
+		
+	auto proc = iter->second;
+	if (proc == nullptr)
+	{
+		cerr << "[TheChatServer][Error] null processor for table id " << static_cast<uint16_t>(tableId)
+			<< " from " << connection.GetID() << '@' << connection.GetAddress() << endl;
+		return;
+	}
+	
+	cout << "[TheChatServer] Process table " << static_cast<uint16_t>(tableId)
+		<< " from " << connection.GetID() << '@' << connection.GetAddress() << endl;
+
+	proc(connection, packet);
 }

@@ -85,7 +85,7 @@ void ChatConnection::RequestSend(const ChatPacket& packet)
 
 void ChatConnection::Receive()
 {
-	constexpr int MAX_SIZE = ChatConstant::LARGE_PACKET_SIZE;
+	constexpr int MAX_SIZE = ChatConstant::PACKET_SIZE;
 
 	int recvBytes = recv(socket, (char*)receiveBuffer, MAX_SIZE, 0);
 	if (recvBytes < 1)
@@ -101,26 +101,19 @@ void ChatConnection::Receive()
 		return;
 
 	assert(recvBytes <= MAX_SIZE);
-	recvBytes = min(recvBytes, MAX_SIZE);
-
+	recvBytes = std::min<int>(recvBytes, MAX_SIZE);
 	auto& header = reinterpret_cast<ChatPacket::Header&>(receiveBuffer[0]);
+
+	if (header.tableId == EChatTableID::HEARTBEAT)
+		return;
+
 	switch (header.packetType)
 	{
 	case ChatPacket::EPacketType::Normal:
-		if (recvBytes <= ChatConstant::PACKET_SIZE)
-		{
-			assert(recvBytes <= ChatConstant::PACKET_SIZE);
-			auto& packet = reinterpret_cast<ChatPacket&>(header);
-			receivedPackets.emplace_back(packet);
-		}
-		else
-		{
-			cerr << "[ChatConnection][Error] Over sized packet is received. It shall be dropped." << endl;
-		}
-		break;
-
-	case ChatPacket::EPacketType::Large:
-		cerr << "[ChatConnection][Error] Large packet is not implemented yet. It shall be dropped." << endl;
+	{
+		auto& packet = reinterpret_cast<ChatPacket&>(header);
+		receivedPackets.emplace_back(packet);
+	}
 		break;
 
 	default:
@@ -134,7 +127,7 @@ std::vector<ChatPacket> ChatConnection::ExtractReceived()
 	vector<ChatPacket> extracted;
 	swap(extracted, receivedPackets);
 
-	return move(extracted);
+	return extracted;
 }
 
 void ChatConnection::FlushSendRequests()
@@ -150,7 +143,13 @@ void ChatConnection::FlushSendRequests()
 
 void ChatConnection::SendHeartBeat()
 {
-	char ch = '\0';
-	send(socket, &ch, sizeof(ch), 0);
+	ChatPacket packet;
+	const char* data = reinterpret_cast<const char*>(&packet);
+	send(socket, data, sizeof(packet), 0);
+}
+
+void ChatConnection::SetID(const char* id)
+{
+	identifier = id;
 }
 

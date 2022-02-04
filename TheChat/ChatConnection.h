@@ -21,7 +21,7 @@ private:
 	std::vector<ChatPacket> receivedPackets;
 	std::vector<ChatPacket> packetsToBeSent;
 
-	uint8_t receiveBuffer[ChatConstant::LARGE_PACKET_SIZE];
+	uint8_t receiveBuffer[ChatConstant::PACKET_SIZE];
 
 public:
 	ChatConnection();
@@ -40,6 +40,7 @@ public:
 	void FlushSendRequests();
 
 	void SendHeartBeat();
+	void SetID(const char* id);
 
 	inline auto& GetID() const { return identifier; }
 	inline auto& GetAddress() const { return address; }

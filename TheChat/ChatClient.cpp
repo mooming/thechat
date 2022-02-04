@@ -15,24 +15,28 @@
 #include "ChatConnection.h"
 #include "ChatConstant.h"
 #include "ChatPacket.h"
+#include "ChatTableID.h"
+#include "GreetingsPacket.h"
+#include "MessagePacket.h"
 
 
 using namespace std;
 
 namespace
 {
-	static constexpr int BUFFER_SIZE = ChatConstant::LARGE_PACKET_SIZE;
+	static constexpr int BUFFER_SIZE = ChatConstant::PACKET_SIZE;
 	static constexpr int BUFFER_LAST_INDEX = BUFFER_SIZE - 1;
 	static constexpr int MAX_MSG_LENGTH = ChatPacket::PAYLOAD_SIZE - 1;
 	static_assert(MAX_MSG_LENGTH < BUFFER_SIZE, "MAX_MSG_LENGTH is bigger than or equal to BUFFER_SIZE.");
 }
 
-ChatClient::ChatClient(const char* address, const char* port)
+ChatClient::ChatClient(const char* address, const char* port, const char* id)
 	: address(address)
 	, port(port)
+	, id(id)
 	, socket(INVALID_SOCKET)
 {
-	cout << "[TheChat] Trying to connect to " << address << ":" << port << endl;
+	cout << "[TheChat] " << id << ": Trying to connect to " << address << ":" << port << endl;
 }
 
 ChatClient::~ChatClient()
@@ -97,8 +101,13 @@ void ChatClient::Run()
 
 	isRunning = true;
 	connection = ChatConnection(socket);
+	connection.SetID("Server");
 
 	cout << "[TheChat] connected! " << endl;
+
+	GreetingsPacket greetings(id);
+	connection.RequestSend(ChatPacket::From(greetings));
+	connection.FlushSendRequests();
 
 	StartHeartBeatThread();
 	StartStdInputThread();
@@ -138,9 +147,13 @@ void ChatClient::Run()
 			
 			for (auto& packet : packets)
 			{
-				if (packet.header.tableId == ChatPacket::MSG_TABLE_ID)
+				if (packet.header.tableId == EChatTableID::MESSAGE_TABLE)
 				{
-					cout << "rcv: " << (const char*)(packet.payload) << endl;
+					auto& message = packet.As<MessagePacket>();
+					message.Validate();
+
+					cout << message.GetSenderID() << ": " << message.GetMessage() << endl;
+					
 					continue;
 				}
 
@@ -163,18 +176,15 @@ void ChatClient::Run()
 						isRunning = false;
 					}
 
-					ChatPacket msgPacket;
-					msgPacket.header.tableId = ChatPacket::MSG_TABLE_ID;
-
-					int strLen = std::min<int>(static_cast<int>(msg.size()), MAX_MSG_LENGTH);
-					;
-					for (int i = 0; i < strLen; ++i)
+					int offset = 0;
+					
+					while (offset < msg.size())
 					{
-						msgPacket.payload[i] = msg.at(i);
+						MessagePacket message;
+						message.SetSenderID(id.c_str());
+						offset = message.SetMessage(msg, offset);
+						connection.RequestSend(ChatPacket::From(message));
 					}
-
-					msgPacket.payload[strLen] = '\0';
-					connection.RequestSend(msgPacket);
 				}
 
 				stdInputBuffer.clear();

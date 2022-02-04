@@ -15,6 +15,7 @@ private:
 	std::atomic<bool> isRunning;
 	std::string address;
 	std::string port;
+	std::string id;
 	Network::TSocket socket;
 
 	ChatConnection connection;
@@ -26,7 +27,7 @@ private:
 	std::thread heartBeatThread;
 
 public:
-	ChatClient(const char* address, const char* port);
+	ChatClient(const char* address, const char* port, const char* id);
 	~ChatClient();
 
 	void Run();
